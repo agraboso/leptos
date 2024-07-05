@@ -1,5 +1,5 @@
 use crate::{
-    html::{attribute::AttributeValue, class::IntoClass},
+    html::{attribute::AttributeValue, class::IntoClass, style::IntoStyle},
     hydration::Cursor,
     no_attrs,
     prelude::{Mountable, Render, RenderHtml},
@@ -226,6 +226,48 @@ where
     fn dry_resolve(&mut self) {}
 
     async fn resolve(self) -> Self::AsyncOutput {
+        self
+    }
+}
+
+impl<R> IntoStyle<R> for Oco<'static, str>
+where
+    R: DomRenderer,
+{
+    type State = (R::Element, Self);
+    type Cloneable = Self;
+    type CloneableOwned = Self;
+
+    fn to_html(self, style: &mut String) {
+        IntoStyle::<R>::to_html(self.as_str(), style);
+    }
+
+    fn hydrate<const FROM_SERVER: bool>(self, el: &R::Element) -> Self::State {
+        (el.clone(), self)
+    }
+
+    fn build(self, el: &R::Element) -> Self::State {
+        R::set_attribute(el, "style", &self);
+        (el.clone(), self)
+    }
+
+    fn rebuild(self, state: &mut Self::State) {
+        let (el, prev) = state;
+        if self != *prev {
+            R::set_attribute(el, "style", &self);
+        }
+        *prev = self;
+    }
+
+    fn into_cloneable(mut self) -> Self::Cloneable {
+        // ensure it's reference-counted
+        self.upgrade_inplace();
+        self
+    }
+
+    fn into_cloneable_owned(mut self) -> Self::CloneableOwned {
+        // ensure it's reference-counted
+        self.upgrade_inplace();
         self
     }
 }

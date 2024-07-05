@@ -473,6 +473,57 @@ where
     }
 }
 
+impl<S, R> IntoStyle<R> for Option<S>
+where
+    S: IntoStyle<R>,
+    R: DomRenderer,
+{
+    type State = (R::Element, Option<S::State>);
+    type Cloneable = Option<S::Cloneable>;
+    type CloneableOwned = Option<S::CloneableOwned>;
+
+    fn to_html(self, style: &mut String) {
+        if let Some(s) = self {
+            s.to_html(style)
+        }
+    }
+
+    fn hydrate<const FROM_SERVER: bool>(self, el: &R::Element) -> Self::State {
+        (el.clone(), self.map(|s| s.hydrate::<FROM_SERVER>(el)))
+    }
+
+    fn build(self, el: &R::Element) -> Self::State {
+        let el = el.clone();
+        let c = self.map(|s| s.build(&el));
+        (el, c)
+    }
+
+    fn rebuild(self, state: &mut Self::State) {
+        let (el, prev) = state;
+        match (self, prev.as_mut()) {
+            (None, _) => {}
+            // (None, None) => {}
+            // (None, Some(_)) => {
+            //     *prev = None;
+            // }
+            (Some(value), None) => {
+                *prev = Some(value.build(el));
+            }
+            (Some(new), Some(old)) => {
+                new.rebuild(old);
+            }
+        }
+    }
+
+    fn into_cloneable(self) -> Self::Cloneable {
+        self.map(|value| value.into_cloneable())
+    }
+
+    fn into_cloneable_owned(self) -> Self::CloneableOwned {
+        self.map(|value| value.into_cloneable_owned())
+    }
+}
+
 #[cfg(feature = "nightly")]
 impl<'a, const V: &'static str, R> IntoStyle<R> for (&'a str, Static<V>)
 where
@@ -604,54 +655,45 @@ where
     }
 }
 
-/*
 #[cfg(test)]
 mod tests {
     use crate::{
         html::{
+            attribute::global::StyleAttribute,
             element::{p, HtmlElement},
-            style::style,
         },
         renderer::dom::Dom,
-        view::{Position, PositionState, RenderHtml},
+        view::RenderHtml,
     };
 
     #[test]
     fn adds_simple_style() {
-        let mut html = String::new();
-        let el: HtmlElement<_, _, _, Dom> = p(style("display: block"), ());
-        el.to_html(&mut html, &PositionState::new(Position::FirstChild));
+        let el: HtmlElement<_, _, _, Dom> = p().style("display: block");
 
-        assert_eq!(html, r#"<p style="display: block;"></p>"#);
+        assert_eq!(el.to_html(), r#"<p style="display: block;"></p>"#);
     }
 
     #[test]
     fn mixes_plain_and_specific_styles() {
-        let mut html = String::new();
         let el: HtmlElement<_, _, _, Dom> =
-            p((style("display: block"), style(("color", "blue"))), ());
-        el.to_html(&mut html, &PositionState::new(Position::FirstChild));
+            p().style("display: block").style(("color", "blue"));
 
-        assert_eq!(html, r#"<p style="display: block;color:blue;"></p>"#);
+        assert_eq!(
+            el.to_html(),
+            r#"<p style="display: block;color:blue;"></p>"#
+        );
     }
 
     #[test]
     fn handles_dynamic_styles() {
-        let mut html = String::new();
-        let el: HtmlElement<_, _, _, Dom> = p(
-            (
-                style("display: block"),
-                style(("color", "blue")),
-                style(("font-weight", || "bold".to_string())),
-            ),
-            (),
-        );
-        el.to_html(&mut html, &PositionState::new(Position::FirstChild));
+        let el: HtmlElement<_, _, _, Dom> = p()
+            .style("display: block")
+            .style(("color", "blue"))
+            .style(("font-weight", || "bold".to_string()));
 
         assert_eq!(
-            html,
+            el.to_html(),
             r#"<p style="display: block;color:blue;font-weight:bold;"></p>"#
         );
     }
 }
- */

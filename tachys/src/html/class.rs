@@ -408,6 +408,68 @@ where
     }
 }
 
+impl<C, R> IntoClass<R> for Option<C>
+where
+    C: IntoClass<R>,
+    R: DomRenderer,
+{
+    type State = (R::Element, Option<C::State>);
+    type Cloneable = Option<C::Cloneable>;
+    type CloneableOwned = Option<C::CloneableOwned>;
+
+    fn html_len(&self) -> usize {
+        match self {
+            Some(c) => c.html_len(),
+            None => 0,
+        }
+    }
+
+    fn to_html(self, class: &mut String) {
+        if let Some(c) = self {
+            c.to_html(class)
+        }
+    }
+
+    fn hydrate<const FROM_SERVER: bool>(self, el: &R::Element) -> Self::State {
+        let state = if !FROM_SERVER {
+            self.map(|c| c.hydrate::<FROM_SERVER>(el))
+        } else {
+            None
+        };
+        (el.clone(), state)
+    }
+
+    fn build(self, el: &R::Element) -> Self::State {
+        let el = el.clone();
+        let c = self.map(|c| c.build(&el));
+        (el, c)
+    }
+
+    fn rebuild(self, state: &mut Self::State) {
+        let (el, prev) = state;
+        match (self, prev.as_mut()) {
+            (None, None) => {}
+            (None, Some(_)) => {
+                *prev = None;
+            }
+            (Some(value), None) => {
+                *prev = Some(value.build(el));
+            }
+            (Some(new), Some(old)) => {
+                new.rebuild(old);
+            }
+        }
+    }
+
+    fn into_cloneable(self) -> Self::Cloneable {
+        self.map(|value| value.into_cloneable())
+    }
+
+    fn into_cloneable_owned(self) -> Self::CloneableOwned {
+        self.map(|value| value.into_cloneable_owned())
+    }
+}
+
 #[cfg(feature = "nightly")]
 impl<R, const V: &'static str> IntoClass<R>
     for crate::view::static_types::Static<V>
@@ -457,49 +519,48 @@ where
     }
 }
 
-/* #[cfg(test)]
+#[cfg(test)]
 mod tests {
     use crate::{
         html::{
-            class::class,
+            attribute::global::ClassAttribute,
             element::{p, HtmlElement},
         },
         renderer::dom::Dom,
-        view::{Position, PositionState, RenderHtml},
+        view::RenderHtml,
     };
 
     #[test]
     fn adds_simple_class() {
-        let mut html = String::new();
-        let el: HtmlElement<_, _, _, Dom> = p(class("foo bar"), ());
-        el.to_html(&mut html, &PositionState::new(Position::FirstChild));
+        // let mut html = String::new();
+        let el: HtmlElement<_, _, _, Dom> = p().class("foo bar");
 
-        assert_eq!(html, r#"<p class="foo bar"></p>"#);
+        assert_eq!(el.to_html(), r#"<p class="foo bar"></p>"#);
     }
 
     #[test]
     fn adds_class_with_dynamic() {
-        let mut html = String::new();
         let el: HtmlElement<_, _, _, Dom> =
-            p((class("foo bar"), class(("baz", true))), ());
-        el.to_html(&mut html, &PositionState::new(Position::FirstChild));
+            p().class("foo bar").class(("baz", true));
 
-        assert_eq!(html, r#"<p class="foo bar baz"></p>"#);
+        assert_eq!(el.to_html(), r#"<p class="foo bar baz"></p>"#);
+    }
+
+    #[test]
+    fn adds_and_removes_class_with_dynamic() {
+        let el: HtmlElement<_, _, _, Dom> =
+            p().class("foo bar").class(("bar", false)).class("baz");
+
+        assert_eq!(el.to_html(), r#"<p class="foo baz"></p>"#);
     }
 
     #[test]
     fn adds_class_with_dynamic_and_function() {
-        let mut html = String::new();
-        let el: HtmlElement<_, _, _, Dom> = p(
-            (
-                class("foo bar"),
-                class(("baz", || true)),
-                class(("boo", false)),
-            ),
-            (),
-        );
-        el.to_html(&mut html, &PositionState::new(Position::FirstChild));
+        let el: HtmlElement<_, _, _, Dom> = p()
+            .class("foo bar")
+            .class(("baz", || true))
+            .class(("boo", false));
 
-        assert_eq!(html, r#"<p class="foo bar baz"></p>"#);
+        assert_eq!(el.to_html(), r#"<p class="foo bar baz"></p>"#);
     }
-} */
+}
